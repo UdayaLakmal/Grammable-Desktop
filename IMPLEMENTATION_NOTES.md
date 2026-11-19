@@ -5,14 +5,15 @@ Delete this file once the app ships.
 
 ## Status — 2026-11-19
 
-**Nothing has been compiled or tested yet.** The core crate was written on a Mac and committed
-without a build, to continue on Ubuntu.
+Core crate and command-line mode build and pass their tests on Ubuntu (Rust 1.100).
+Nothing has been built on Windows yet.
 
 | Part | State |
 |---|---|
-| `crates/grammable-core` — presets, prompt, diff, engine, backends | Written, ported from the Swift `GrammableCore`. Not compiled. Unit tests included. |
-| `crates/grammable-core/src/backends/builtin.rs` — Harper offline checker | Written from memory of the harper-core API. **Most likely to need fixes** (see the note at the top of the file). |
-| `src-tauri/` — the desktop app | Only a stub `Cargo.toml` and an empty `main.rs`. No Tauri yet. |
+| `crates/grammable-core` — presets, prompt, diff, engine, backends | Ported from the Swift `GrammableCore`. **Builds, 31 tests pass** on Ubuntu. |
+| `crates/grammable-core/src/backends/builtin.rs` — Harper offline checker | Works. Slow (~7 s per check in a debug build) and over-eager: it applies style lints too (e.g. "stdin" → "standard input"). Restrict it to spelling/grammar lints. |
+| `src-tauri/` — CLI mode | **Done:** `--list`, `--status`, `--run <preset> [--backend <id>] [--diff] [text]`, `--version`, `--help` (same as macOS). Settings in `settings.rs`. Windows `AttachConsole` not yet compiled on Windows. |
+| `src-tauri/` — the desktop app | No Tauri yet; running without arguments prints a notice. |
 | `ui/` — popup, review, settings | Not started. |
 | `.github/workflows/` — CI, release, winget | Not started. |
 | App icons | Only `src-tauri/icons/app-icon-1024.png` (copied from the macOS app). Generate the rest with `npx tauri icon`. |
@@ -31,16 +32,17 @@ without a build, to continue on Ubuntu.
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libssl-dev build-essential
-cargo test -p grammable-core
+sudo apt install build-essential pkg-config cmake libssl-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libxdo-dev
+cargo test --workspace
 ```
 
-Fix whatever fails to compile in `grammable-core` first (expect `builtin.rs`), then start on the app.
+Use `libayatana-appindicator3-dev`, not `libappindicator3-dev`: on current Ubuntu the latter removes
+`update-notifier`. The first build is slow — harper-core pulls in `burn`, `candle` and `wgpu`.
 
 ## Next steps
 
-1. **Get `grammable-core` green** — `cargo test -p grammable-core`.
-2. **CLI mode** in `src-tauri/src/main.rs`: `grammable --run <preset-id> [text]` (text from stdin when omitted), `--list`, `--backend <id>`, `--version`. On Windows call `AttachConsole(ATTACH_PARENT_PROCESS)` so output shows in the terminal (the app uses the GUI subsystem in release).
+1. ~~Get `grammable-core` green~~ — done.
+2. ~~CLI mode~~ — done (`src-tauri/src/cli.rs`). Settings file: `dirs::config_dir()/Grammable/settings.json` (`defaultBackend`, `fallbackToBuiltIn`, `backends`); the app adds its own fields to the same struct.
 3. **Tauri app** (`tauri`, `tauri-plugin-global-shortcut`, `tauri-plugin-autostart`, `tauri-plugin-opener`, `arboard`, `enigo`):
    - Tray menu: Enabled ✓ · Check clipboard text · Settings… · Open presets folder · Quit. Closing windows must not quit the app.
    - Global shortcut `Ctrl+Alt+G` (configurable; AltGr clashes on some layouts). Act on key **release** so Ctrl+Alt aren't still held when we send Ctrl+C.
@@ -52,7 +54,7 @@ Fix whatever fails to compile in `grammable-core` first (expect `builtin.rs`), t
      - Wayland (`XDG_SESSION_TYPE=wayland`): no keystroke injection or window positioning; offer **Copy** instead of Replace.
    - Popup window (`label: popup`, undecorated, always on top, skip taskbar, hidden by default) shown at the cursor; hides on blur.
    - Commands: `get_popup_state`, `run_preset`, `replace_text`, `copy_text`, `hide_popup`, `get_settings`, `save_settings`, `backend_statuses`, `open_presets_folder`.
-   - Settings in `dirs::config_dir()/Grammable/settings.json`: default backend, hotkey, start at login, fallback to built-in, excluded apps (process names), `BackendConfig`.
+   - Settings: extend `settings::Settings` (already has default backend, fallback to built-in, `BackendConfig`) with hotkey, start at login, excluded apps (process names), plus `save()`.
 4. **UI** (`ui/`): action menu → loading → review. Fix mode: accept/reject each change (`TextDiff` segments). Rewrite mode: editable before/after. On-device / Cloud badge. Map SF Symbol icon names to emoji.
 5. **Later:** Windows UI Automation for reading the selection without the clipboard, password-field guard (UIA `IsPassword`, AT-SPI on Linux), floating "G" button, Ollama one-click setup (`winget install Ollama.Ollama` / `ollama.com/install.sh`).
 

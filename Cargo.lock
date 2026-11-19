@@ -2272,6 +2272,14 @@ dependencies = [
 [[package]]
 name = "grammable"
 version = "0.1.0"
+dependencies = [
+ "dirs 7.0.0",
+ "grammable-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "grammable-core"
