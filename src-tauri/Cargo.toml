@@ -1,0 +1,15 @@
+[package]
+name = "grammable"
+description = "Grammable — free, open-source AI writing assistant for Windows and Linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+default-run = "grammable"
+
+[[bin]]
+name = "grammable"
+path = "src/main.rs"
+
+[dependencies]
