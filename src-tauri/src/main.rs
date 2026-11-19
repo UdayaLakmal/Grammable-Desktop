@@ -9,22 +9,22 @@
 // Release builds on Windows are GUI apps (no console window); the CLI re-attaches below.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod app;
 mod cli;
+mod commands;
 mod settings;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let app_flag = |a: &String| a == app::ARG_BACKGROUND || a == app::ARG_POPUP;
 
-    if args.first().is_some_and(|a| a.starts_with('-')) {
+    if args.first().is_some_and(|a| a.starts_with('-') && !app_flag(a)) {
         // Command-line mode, e.g.  grammable --run fix-grammar --backend ollama "teh text"
         attach_parent_console();
         std::process::exit(cli::run(&args));
     }
 
-    // TODO: start the Tauri tray app here.
-    attach_parent_console();
-    eprintln!("The Grammable desktop app isn't built yet. Command-line mode works: grammable --help");
-    std::process::exit(64);
+    app::run(&args);
 }
 
 /// A GUI-subsystem exe has no console; borrow the terminal it was started from so
