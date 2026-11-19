@@ -304,6 +304,20 @@ impl PresetStore {
         Ok(self.directory.clone())
     }
 
+    /// Writes a built-in preset to `<id>.md` so the user can customize it, and returns the path.
+    /// An existing file (already customized) is left alone. `None` when `id` isn't a built-in.
+    pub fn export_built_in(&self, id: &str) -> std::io::Result<Option<PathBuf>> {
+        let Some(preset) = built_in().into_iter().find(|p| p.id == id) else {
+            return Ok(None);
+        };
+        self.ensure_directory()?;
+        let path = self.directory.join(format!("{id}.md"));
+        if !path.exists() {
+            fs::write(&path, serialize(&preset))?;
+        }
+        Ok(Some(path))
+    }
+
     /// Writes a new preset file and returns its path. Never overwrites an existing file.
     pub fn create_preset(&self, name: &str) -> std::io::Result<PathBuf> {
         self.ensure_directory()?;
@@ -423,6 +437,22 @@ mod tests {
         assert_eq!(result.errors.len(), 1);
         let created = PresetStore::new(dir.clone()).create_preset("Pirate Speak!").unwrap();
         assert!(created.ends_with("pirate-speak.md"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn export_built_in_writes_once() {
+        let dir = std::env::temp_dir().join(format!("grammable-export-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let store = PresetStore::new(dir.clone());
+        assert_eq!(store.export_built_in("nope").unwrap(), None);
+        let path = store.export_built_in("concise").unwrap().unwrap();
+        let exported = parse(&fs::read_to_string(&path).unwrap(), "concise", Some(&path)).unwrap();
+        assert_eq!(exported.name, "Make Concise");
+        assert_eq!(exported.order, 60);
+        fs::write(&path, "---\nname: Mine\n---\nShorter.").unwrap();
+        store.export_built_in("concise").unwrap();
+        assert!(fs::read_to_string(&path).unwrap().contains("Mine"));
         let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -14,6 +14,18 @@ pub struct TextChange {
     pub replacement: String,
 }
 
+impl TextChange {
+    /// Text was added where there was none.
+    pub fn is_insertion(&self) -> bool {
+        self.original.is_empty() && !self.replacement.is_empty()
+    }
+
+    /// Text was removed with nothing in its place.
+    pub fn is_deletion(&self) -> bool {
+        !self.original.is_empty() && self.replacement.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Segment {

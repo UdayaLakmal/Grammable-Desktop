@@ -16,7 +16,16 @@ use crate::prompt::{combined_prompt, user_prompt, SYSTEM_PROMPT};
 use crate::shell_env;
 
 pub fn executable(id: BackendId, config: &BackendConfig) -> Option<PathBuf> {
-    shell_env::find_executable(id.executable_name()?, config.executable_path(id))
+    let custom = config.executable_path(id);
+    let name = id.executable_name()?;
+    let found = shell_env::find_executable(name, custom);
+    // Not on PATH: use a copy bundled with a desktop app or editor extension, if any.
+    // Not when the user set a path; a wrong custom path should show as missing.
+    let no_custom_path = custom.map_or(true, |p| p.trim().is_empty());
+    if found.is_none() && no_custom_path {
+        return shell_env::bundled(name);
+    }
+    found
 }
 
 fn require(id: BackendId, config: &BackendConfig) -> Result<PathBuf, BackendError> {

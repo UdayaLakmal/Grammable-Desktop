@@ -271,9 +271,41 @@ pub async fn check_availability(id: BackendId, config: &BackendConfig) -> Backen
     }
 }
 
+/// First-run choice of default backend: the first AI that is ready, else the built-in checker.
+/// Same order as the macOS app (minus Apple Intelligence).
+pub async fn first_available(config: &BackendConfig) -> BackendId {
+    use BackendId::*;
+    // Checked concurrently; the order only decides which ready backend wins.
+    let (claude, codex, gemini, ollama, openai) = tokio::join!(
+        check_availability(Claude, config),
+        check_availability(Codex, config),
+        check_availability(Gemini, config),
+        check_availability(Ollama, config),
+        check_availability(OpenAiCompatible, config),
+    );
+    [(Claude, claude), (Codex, codex), (Gemini, gemini), (Ollama, ollama), (OpenAiCompatible, openai)]
+        .into_iter()
+        .find(|(_, status)| status.available)
+        .map(|(id, _)| id)
+        .unwrap_or(BuiltIn)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn first_available_falls_back_to_built_in() {
+        let mut c = BackendConfig {
+            ollama_url: "http://127.0.0.1:9".into(),
+            openai_base_url: "http://127.0.0.1:9/v1".into(),
+            ..Default::default()
+        };
+        for id in [BackendId::Claude, BackendId::Codex, BackendId::Gemini] {
+            c.executable_paths.insert(id, "/nonexistent/grammable-test".into());
+        }
+        assert_eq!(first_available(&c).await, BackendId::BuiltIn);
+    }
 
     #[test]
     fn ids_round_trip() {
