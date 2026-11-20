@@ -13,8 +13,8 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuil
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_opener::OpenerExt;
 
-use crate::commands;
 use crate::settings::Settings;
+use crate::{commands, hotkey, popup};
 
 pub const RELEASES_URL: &str = "https://github.com/UdayaLakmal/Grammable-Desktop/releases";
 pub const KOFI_URL: &str = "https://ko-fi.com/udayalakmal";
@@ -30,6 +30,8 @@ const TRAY_ICON_PAUSED: &[u8] = include_bytes!("../icons/tray-paused.png");
 
 pub struct AppState {
     pub settings: Mutex<Settings>,
+    /// Why the global shortcut couldn't be registered, if it couldn't.
+    pub hotkey_error: Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -60,7 +62,9 @@ pub fn run(args: &[String]) {
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![ARG_BACKGROUND])))
         .plugin(tauri_plugin_opener::init())
-        .manage(AppState { settings: Mutex::new(settings) })
+        .plugin(hotkey::plugin())
+        .manage(AppState { settings: Mutex::new(settings), hotkey_error: Mutex::new(None) })
+        .manage(popup::Popup::default())
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
             commands::save_settings,
@@ -76,9 +80,21 @@ pub fn run(args: &[String]) {
             commands::create_preset,
             commands::open_url,
             commands::app_info,
+            commands::hotkey_status,
+            popup::popup_context,
+            popup::popup_resize,
+            popup::popup_run,
+            popup::popup_cancel,
+            popup::popup_dismiss,
+            popup::popup_replace,
+            popup::popup_copy,
+            popup::popup_open_settings,
         ])
         .setup(move |app| {
             build_tray(app.handle())?;
+            popup::create_window(app.handle())?;
+            let shortcut = app.state::<AppState>().settings().hotkey;
+            hotkey::register(app.handle(), &shortcut);
             if first_run {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move { first_run_setup(handle).await });
@@ -120,6 +136,10 @@ async fn first_run_setup(app: AppHandle) {
 
 /// Call after any settings change: refresh the tray and tell open windows.
 pub fn settings_changed(app: &AppHandle) {
+    let shortcut = app.state::<AppState>().settings().hotkey;
+    if hotkey::registered(app).as_deref() != Some(shortcut.as_str()) {
+        hotkey::register(app, &shortcut);
+    }
     if let Err(e) = refresh_tray(app) {
         eprintln!("Warning: could not update the tray menu: {e}");
     }
@@ -259,13 +279,9 @@ pub fn open_url(app: &AppHandle, url: &str) {
     }
 }
 
-/// Hotkey / tray / `--popup`: act on the current selection. Wired up in M2.
+/// Hotkey / tray / `--popup`: act on the current selection.
 pub fn trigger_from_hotkey(app: &AppHandle) {
-    if !app.state::<AppState>().settings().is_enabled {
-        return;
-    }
-    // TODO(M2): capture the selection and show the popup.
-    show_settings(app, None);
+    popup::trigger(app);
 }
 
 // MARK: Settings window

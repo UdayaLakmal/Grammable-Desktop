@@ -5,18 +5,35 @@ Delete this file once the app ships.
 
 ## Status — 2026-11-19
 
-Core crate and command-line mode build and pass their tests on Ubuntu (Rust 1.100).
-Nothing has been built on Windows yet.
+Milestones M1 (app shell) and M2 (hotkey → popup → replace) are written. All tests pass on Ubuntu (Rust 1.100), but nothing has been built on Windows yet.
 
 | Part | State |
 |---|---|
-| `crates/grammable-core` — presets, prompt, diff, engine, backends | Ported from the Swift `GrammableCore`. **Builds, 31 tests pass** on Ubuntu. |
-| `crates/grammable-core/src/backends/builtin.rs` — Harper offline checker | Works. Slow (~7 s per check in a debug build) and over-eager: it applies style lints too (e.g. "stdin" → "standard input"). Restrict it to spelling/grammar lints. |
-| `src-tauri/` — CLI mode | **Done:** `--list`, `--status`, `--run <preset> [--backend <id>] [--diff] [text]`, `--version`, `--help` (same as macOS). Settings in `settings.rs`. Windows `AttachConsole` not yet compiled on Windows. |
-| `src-tauri/` — the desktop app | No Tauri yet; running without arguments prints a notice. |
-| `ui/` — popup, review, settings | Not started. |
-| `.github/workflows/` — CI, release, winget | Not started. |
-| App icons | Only `src-tauri/icons/app-icon-1024.png` (copied from the macOS app). Generate the rest with `npx tauri icon`. |
+| `crates/grammable-core` | Done. 36 tests pass. |
+| Harper built-in checker (`backends/builtin.rs`) | Works, but slow (~7 s per check in a debug build). It also applies style lints, e.g. "stdin" → "standard input"; restrict it to spelling and grammar. |
+| CLI mode (`src-tauri/src/cli.rs`) | Done. |
+| M1 app shell: tray, Settings window, single instance, launch at login, first-run backend | Done. Runs on Ubuntu. |
+| M2: hotkey → capture → popup → review → Replace/Copy | Written. Popup UI checked in a browser with a mock API. The Linux part targets X11: on Wayland it only reaches X11 (XWayland) apps until M3. **Windows code (`platform/windows.rs`, UI Automation) has never been compiled.** |
+| M3 Wayland portals, M4 G button, M5 hotkey recorder, M6 CI/release | Not started. |
+
+### M2 layout
+- `src-tauri/src/platform/`:
+  - `mod.rs`: copy with a marker on the clipboard, then paste.
+  - `clipboard.rs`: one long-lived arboard handle. Its own writes are kept out of clipboard history.
+  - `keys.rs`: Ctrl+C and Ctrl+V via enigo.
+  - `x11.rs`: EWMH active window, process name from `/proc`, modifier state.
+  - `windows.rs`: Win32 and UI Automation, including `IsPassword`.
+- `guard.rs`: excluded apps, Grammable's own windows, minimum length and the 30,000-character limit.
+- `popup.rs`:
+  - Hidden popup window. It closes when it loses focus.
+  - Placement maths, with tests.
+  - Commands: `popup_context`, `popup_resize`, `popup_run` (cancellable), `popup_replace`, `popup_copy`.
+- `hotkey.rs`: tauri-plugin-global-shortcut. It acts on key press, then waits for the modifier keys to be released before copying. Settings shows any registration error.
+- `ui/popup.{html,css,js}`:
+  - Keys: 1–9, the arrow keys and Enter in the menu.
+  - Enter replaces (Ctrl+Enter in the rewrite editor), Ctrl+Shift+C copies, Esc closes.
+- On X11 the hotkey always copies with Ctrl+C. It doesn't use PRIMARY, because PRIMARY may hold a selection from another app. PRIMARY is for the G button (M4).
+- The tray item "Improve Selected Text" usually finds nothing, because the tray menu takes focus. Use the shortcut.
 
 ## Decisions
 

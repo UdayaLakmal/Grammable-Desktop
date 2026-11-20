@@ -17,15 +17,27 @@ grammable-core = { path = "../crates/grammable-core" }
 dirs = "7.0.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "io-std", "io-util"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "sync"] }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-opener = "2"
+arboard = { version = "3.7", default-features = false, features = ["image-data"] }
+enigo = "0.6"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = "0.13"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Console",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+uiautomation = "0.25"
 
 [build-dependencies]
 tauri-build = "2"

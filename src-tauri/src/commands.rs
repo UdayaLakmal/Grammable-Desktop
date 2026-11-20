@@ -209,6 +209,12 @@ pub fn open_url(app: AppHandle, url: String) -> CmdResult<()> {
     app.opener().open_url(url, None::<&str>).map_err(err)
 }
 
+/// `None` when the shortcut works, otherwise why it couldn't be registered.
+#[tauri::command]
+pub fn hotkey_status(state: State<AppState>) -> Option<String> {
+    state.hotkey_error.lock().unwrap().clone()
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {

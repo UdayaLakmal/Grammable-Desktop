@@ -50,6 +50,14 @@ async function save() {
   }, 150);
 }
 
+async function renderHotkeyStatus() {
+  try {
+    $("#hotkey-error").textContent = (await invoke("hotkey_status")) ?? "";
+  } catch (e) {
+    $("#hotkey-error").textContent = String(e);
+  }
+}
+
 function renderGeneral() {
   $("#onboarding").hidden = settings.hasCompletedOnboarding;
   $("#onboarding-hotkey").textContent = settings.hotkey;
@@ -291,6 +299,7 @@ async function start() {
   $("#about-version").textContent = `Version ${info.version} · ${info.platform}${info.session !== info.platform ? ` (${info.session})` : ""}`;
   $("#about-paths").textContent = `Settings: ${info.settingsPath}`;
   renderGeneral();
+  renderHotkeyStatus();
   renderDefaultBackend();
   renderExcluded();
   showTab(location.hash.slice(1));
@@ -299,6 +308,7 @@ async function start() {
   await tauri.event.listen("settings-changed", (e) => {
     settings = e.payload;
     renderGeneral();
+    renderHotkeyStatus();
     renderDefaultBackend();
     renderExcluded();
   });
