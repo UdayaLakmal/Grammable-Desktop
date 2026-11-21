@@ -64,6 +64,12 @@ pub fn get_text() -> Option<String> {
     with(|c| c.get_text().ok()).flatten()
 }
 
+#[cfg(target_os = "linux")]
+pub fn get_primary() -> Option<String> {
+    use arboard::{GetExtLinux, LinuxClipboardKind};
+    with(|c| c.get().clipboard(LinuxClipboardKind::Primary).text().ok()).flatten()
+}
+
 /// Puts text on the clipboard. `transient` keeps it out of clipboard history.
 pub fn set_text(text: &str, transient_write: bool) -> bool {
     with(|c| {

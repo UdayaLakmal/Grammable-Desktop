@@ -5,7 +5,7 @@ Delete this file once the app ships.
 
 ## Status — 2026-11-19
 
-Milestones M1 (app shell) and M2 (hotkey → popup → replace) are written. All tests pass on Ubuntu (Rust 1.100), but nothing has been built on Windows yet.
+Milestones M1–M4 are written: app shell, hotkey → popup → replace, Wayland portals, and the G button. All tests pass on Ubuntu (Rust 1.100), but nothing has been built on Windows yet.
 
 | Part | State |
 |---|---|
@@ -14,7 +14,35 @@ Milestones M1 (app shell) and M2 (hotkey → popup → replace) are written. All
 | CLI mode (`src-tauri/src/cli.rs`) | Done. |
 | M1 app shell: tray, Settings window, single instance, launch at login, first-run backend | Done. Runs on Ubuntu. |
 | M2: hotkey → capture → popup → review → Replace/Copy | Written. Popup UI checked in a browser with a mock API. The Linux part targets X11: on Wayland it only reaches X11 (XWayland) apps until M3. **Windows code (`platform/windows.rs`, UI Automation) has never been compiled.** |
-| M3 Wayland portals, M4 G button, M5 hotkey recorder, M6 CI/release | Not started. |
+| M3 Wayland (`platform/wayland.rs`) | Written and partly tested on GNOME 50. Copy (portal Ctrl+Insert), clipboard read, paste (Shift+Insert) and saved consent all worked in `grammable --portal-test`. The shortcut portal and popup focus still need a real run. |
+| M4 G button (`button.rs`, `monitor.rs`, `ui/trigger.html`) | Written, never run: Windows and X11 only, and this machine is on Wayland. |
+| M5 hotkey recorder, M6 CI/release | Not started. |
+
+### M3: Wayland notes
+- **RemoteDesktop portal** (keyboard only) plus the **Clipboard portal** on the same session.
+  - Consent is asked once; the restore token is saved in `portal-token` next to `settings.json`.
+  - The session starts on first use, or from Settings › General › Wayland › Allow….
+- **Copy and paste keys:** Ctrl+Insert to copy, Shift+Insert to paste. There's no excluded-app check on Wayland, and Ctrl+C would interrupt a program running in a terminal.
+- **Clipboard reads only work for formats GNOME has announced** in `SelectionOwnerChanged` (otherwise "Internal error").
+  - Grammable can't read its own offer back, so it answers that from memory.
+  - The portal's file descriptors are non-blocking; they are switched to blocking and read on a worker thread.
+- **Shortcut:** bound through the GlobalShortcuts portal on first run. After that GNOME owns it (Settings › Apps › Grammable), so changing the hotkey in Grammable has no effect there.
+  - The shortcut's activation token is passed to the popup (`gtk_window_set_startup_id`), so GNOME focuses it.
+- **App identity:** the portals identify the app as `io.github.udayalakmal.grammable` (`register_host_app`).
+  - If no `.desktop` file with that name exists, Grammable writes one to `~/.local/share/applications`.
+  - Release packages must install it under that name.
+- **Debug:** `GRAMMABLE_DEBUG=1` logs portal traffic. `grammable --portal-test [--paste]` checks the copy path by hand: you select the text yourself, so it never acts on a window you didn't choose.
+
+### M4: G button notes
+- **Watching input:** `rdev` listens for mouse and keyboard events (low-level hooks on Windows, XRecord on X11). Only which keys are pressed is looked at, never the text typed.
+- **What counts as a selection:** a drag of at least 5 px, a double or triple click, Shift with an arrow key or Home/End/PgUp/PgDn, or Ctrl+A. After 180 ms Grammable checks the selection:
+  - Excluded apps are skipped.
+  - Text is read through UI Automation on Windows, or PRIMARY on X11.
+  - Otherwise the text is copied only when the button is clicked.
+- **The button:** 28 px; it never takes focus (`focusable(false)`, plus `SW_SHOWNOACTIVATE` on Windows). It hides after 5 s unless the mouse is on it, and on any other click, key press or scroll.
+- **Grammable's own keystrokes:** ignored for 400 ms (`monitor::mark_synthetic`).
+
+
 
 ### M2 layout
 - `src-tauri/src/platform/`:

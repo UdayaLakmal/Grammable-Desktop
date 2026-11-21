@@ -46,6 +46,8 @@ struct Inner {
     cancel: Option<tokio::sync::oneshot::Sender<()>>,
     /// The window has had focus since it was shown, so losing it means "clicked elsewhere".
     had_focus: bool,
+    /// Wayland: the token the desktop passed with the shortcut, which lets the popup take focus.
+    activation_token: Option<String>,
 }
 
 impl Popup {
@@ -98,6 +100,18 @@ fn open(app: &AppHandle, view: View) {
     let _ = app.emit_to(LABEL, "popup-open", view);
 }
 
+/// Opens the action menu for text captured elsewhere (the G button).
+pub fn open_menu(app: &AppHandle, text: String, target: Option<Target>, anchor: Option<(f64, f64)>) {
+    {
+        let popup = app.state::<Popup>();
+        let mut inner = popup.lock();
+        inner.text = text;
+        inner.target = target;
+        inner.anchor = anchor;
+    }
+    open(app, View::Menu);
+}
+
 pub fn dismiss(app: &AppHandle) {
     {
         let popup = app.state::<Popup>();
@@ -142,7 +156,8 @@ pub fn place(anchor: (f64, f64), size: (f64, f64), area: (f64, f64, f64, f64), g
 // MARK: Trigger
 
 /// Hotkey, tray item or `grammable --popup`: read the selection and show the menu.
-pub fn trigger(app: &AppHandle) {
+/// `activation_token` comes from the Wayland shortcut portal.
+pub fn trigger(app: &AppHandle, activation_token: Option<String>) {
     let state = app.state::<AppState>().settings();
     if !state.is_enabled {
         return;
@@ -151,11 +166,18 @@ pub fn trigger(app: &AppHandle) {
         dismiss(app); // pressing the shortcut again closes it
         return;
     }
+    crate::button::hide(app);
     let popup = app.state::<Popup>();
     if popup.capturing.swap(true, Ordering::SeqCst) {
         return;
     }
-    let anchor = app.cursor_position().ok().map(|p| (p.x, p.y)).filter(|p| *p != (0.0, 0.0));
+    popup.lock().activation_token = activation_token;
+    // Wayland doesn't reveal the mouse position; the desktop places the popup.
+    let anchor = if is_wayland() {
+        None
+    } else {
+        app.cursor_position().ok().map(|p| (p.x, p.y)).filter(|p| *p != (0.0, 0.0))
+    };
     let app = app.clone();
     std::thread::spawn(move || {
         let view = capture(&app, anchor);
@@ -166,9 +188,50 @@ pub fn trigger(app: &AppHandle) {
     });
 }
 
+fn is_wayland() -> bool {
+    #[cfg(target_os = "linux")]
+    return platform::wayland::is_wayland();
+    #[cfg(not(target_os = "linux"))]
+    false
+}
+
+/// Wayland: copy through the portal. No excluded-app check is possible, so it
+/// copies with Ctrl+Insert, which doesn't interrupt programs in terminals.
+#[cfg(target_os = "linux")]
+fn capture_wayland(app: &AppHandle, settings: &crate::settings::Settings) -> Option<View> {
+    // Give the user a moment to let go of the shortcut's keys.
+    std::thread::sleep(Duration::from_millis(250));
+    let text = match tauri::async_runtime::block_on(platform::wayland::copy_selection()) {
+        Ok(text) => text,
+        Err(e) => {
+            return Some(View::Message {
+                title: "Grammable needs keyboard access".into(),
+                detail: format!(
+                    "{e}\n\nOn Wayland, Grammable copies and pastes through your desktop's remote-input \
+                     permission. Allow it in Grammable Settings › General."
+                ),
+                is_error: true,
+            });
+        }
+    };
+    if let Verdict::Refuse { title, detail } = guard::check_text(text.as_deref(), settings) {
+        return Some(View::Message { title, detail, is_error: false });
+    }
+    let popup = app.state::<Popup>();
+    let mut inner = popup.lock();
+    inner.text = text.unwrap_or_default();
+    inner.target = None;
+    inner.anchor = None;
+    Some(View::Menu)
+}
+
 /// Runs off the main thread: it waits for keys and the clipboard.
 fn capture(app: &AppHandle, anchor: Option<(f64, f64)>) -> Option<View> {
     let settings = app.state::<AppState>().settings();
+    #[cfg(target_os = "linux")]
+    if is_wayland() {
+        return capture_wayland(app, &settings);
+    }
     // Let go of Ctrl+Alt first, or the Ctrl+C below would arrive as Ctrl+Alt+C.
     platform::wait_for_modifiers_released(Duration::from_millis(1500));
 
@@ -296,6 +359,15 @@ pub fn popup_resize(app: AppHandle, popup: State<Popup>, width: f64, height: f64
         }
     }
     if !window.is_visible().unwrap_or(false) {
+        #[cfg(target_os = "linux")]
+        if let Some(token) = popup.lock().activation_token.take() {
+            // Wayland: without the shortcut's activation token, GNOME shows
+            // "Grammable is ready" instead of focusing the popup.
+            if let Ok(gtk_window) = window.gtk_window() {
+                use gtk::prelude::GtkWindowExt;
+                gtk_window.set_startup_id(&token);
+            }
+        }
         window.show().map_err(|e| e.to_string())?;
     }
     let _ = window.set_focus();
@@ -352,6 +424,28 @@ pub fn popup_replace(app: AppHandle, text: String) {
     let target = app.state::<Popup>().lock().target.clone();
     dismiss(&app);
     std::thread::spawn(move || {
+        #[cfg(target_os = "linux")]
+        if is_wayland() {
+            // Let focus go back to the app the text came from.
+            std::thread::sleep(Duration::from_millis(250));
+            if let Err(e) = tauri::async_runtime::block_on(platform::wayland::paste(&text)) {
+                eprintln!("Grammable: {e}");
+                let copied = tauri::async_runtime::block_on(platform::wayland::copy_text(&text)).is_ok();
+                open(
+                    &app,
+                    View::Message {
+                        title: "Couldn’t paste".into(),
+                        detail: if copied {
+                            format!("{e}\n\nThe text is on the clipboard: press Ctrl+V to paste it.")
+                        } else {
+                            e
+                        },
+                        is_error: true,
+                    },
+                );
+            }
+            return;
+        }
         if let Err(e) = platform::paste(&text, target.as_ref()) {
             eprintln!("Grammable: {e}");
         }
@@ -360,6 +454,13 @@ pub fn popup_replace(app: AppHandle, text: String) {
 
 #[tauri::command]
 pub fn popup_copy(app: AppHandle, text: String) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    let ok = if is_wayland() {
+        tauri::async_runtime::block_on(platform::wayland::copy_text(&text)).is_ok()
+    } else {
+        platform::clipboard::set_text(&text, false)
+    };
+    #[cfg(not(target_os = "linux"))]
     let ok = platform::clipboard::set_text(&text, false);
     dismiss(&app);
     if ok { Ok(()) } else { Err("Could not copy to the clipboard.".into()) }

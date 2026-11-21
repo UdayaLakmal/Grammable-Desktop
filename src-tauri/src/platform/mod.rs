@@ -11,6 +11,8 @@ pub mod clipboard;
 mod keys;
 
 #[cfg(target_os = "linux")]
+pub mod wayland;
+#[cfg(target_os = "linux")]
 mod x11;
 #[cfg(target_os = "linux")]
 use x11 as imp;
@@ -61,6 +63,15 @@ pub fn activate(target: &Target) -> bool {
 
 pub fn probe_selection() -> Probe {
     imp::probe_selection()
+}
+
+/// X11: the PRIMARY selection, which holds whatever was selected last.
+/// Only meaningful right after the user selected something.
+pub fn read_primary() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    return clipboard::get_primary();
+    #[cfg(not(target_os = "linux"))]
+    None
 }
 
 /// Waits until Ctrl, Alt, Shift and Super are up, so a shortcut's own keys

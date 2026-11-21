@@ -84,6 +84,22 @@
         <div style="margin-top:10px"><button class="btn primary" id="onboarding-done">Got it</button></div>
       </div>
 
+      <div id="wayland" hidden>
+        <h2>Wayland</h2>
+        <div class="card">
+          <div class="row">
+            <div class="label">Keyboard access<small>Grammable copies your selection and pastes the result by pressing
+              Ctrl+Insert and Shift+Insert through your desktop's remote-input permission. Your desktop asks once.
+              While it's on, GNOME may show a remote-control icon in the top bar.</small>
+              <small id="wayland-status"></small></div>
+            <div class="row" style="gap:6px;border:0;padding:0">
+              <button class="btn small" id="wayland-connect">Allow…</button>
+              <button class="btn small" id="wayland-reset">Reset</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <h2>Behaviour</h2>
       <div class="card">
         <div class="row">
@@ -99,7 +115,7 @@
           <input type="number" min="1" max="200" style="width:80px" data-setting="minSelectionLength">
         </div>
         <div class="row">
-          <div class="label">Keyboard shortcut<small>Acts on the selected text in any app.</small><small id="hotkey-error" class="error-text"></small></div>
+          <div class="label">Keyboard shortcut<small>Acts on the selected text in any app.</small><small id="hotkey-note"></small><small id="hotkey-error" class="error-text"></small></div>
           <kbd id="hotkey-display">Ctrl+Alt+G</kbd>
         </div>
         <div class="row">

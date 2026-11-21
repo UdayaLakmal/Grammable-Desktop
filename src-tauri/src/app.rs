@@ -14,7 +14,7 @@ use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::settings::Settings;
-use crate::{commands, hotkey, popup};
+use crate::{button, commands, hotkey, monitor, popup};
 
 pub const RELEASES_URL: &str = "https://github.com/UdayaLakmal/Grammable-Desktop/releases";
 pub const KOFI_URL: &str = "https://ko-fi.com/udayalakmal";
@@ -32,6 +32,8 @@ pub struct AppState {
     pub settings: Mutex<Settings>,
     /// Why the global shortcut couldn't be registered, if it couldn't.
     pub hotkey_error: Mutex<Option<String>>,
+    /// Extra information about the shortcut, e.g. that the desktop manages it (Wayland).
+    pub hotkey_note: Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -63,8 +65,9 @@ pub fn run(args: &[String]) {
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![ARG_BACKGROUND])))
         .plugin(tauri_plugin_opener::init())
         .plugin(hotkey::plugin())
-        .manage(AppState { settings: Mutex::new(settings), hotkey_error: Mutex::new(None) })
+        .manage(AppState { settings: Mutex::new(settings), hotkey_error: Mutex::new(None), hotkey_note: Mutex::new(None) })
         .manage(popup::Popup::default())
+        .manage(button::Button::default())
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
             commands::save_settings,
@@ -81,6 +84,9 @@ pub fn run(args: &[String]) {
             commands::open_url,
             commands::app_info,
             commands::hotkey_status,
+            commands::wayland_status,
+            commands::wayland_connect,
+            commands::wayland_reset,
             popup::popup_context,
             popup::popup_resize,
             popup::popup_run,
@@ -89,10 +95,22 @@ pub fn run(args: &[String]) {
             popup::popup_replace,
             popup::popup_copy,
             popup::popup_open_settings,
+            button::button_clicked,
+            button::button_hover,
+            button::button_info,
         ])
         .setup(move |app| {
             build_tray(app.handle())?;
             popup::create_window(app.handle())?;
+            // The G button and its input monitor: Windows and X11 only.
+            #[cfg(target_os = "linux")]
+            let wayland = crate::platform::wayland::is_wayland();
+            #[cfg(not(target_os = "linux"))]
+            let wayland = false;
+            if !wayland {
+                button::create_window(app.handle())?;
+                monitor::start(app.handle().clone());
+            }
             let shortcut = app.state::<AppState>().settings().hotkey;
             hotkey::register(app.handle(), &shortcut);
             if first_run {
@@ -281,7 +299,7 @@ pub fn open_url(app: &AppHandle, url: &str) {
 
 /// Hotkey / tray / `--popup`: act on the current selection.
 pub fn trigger_from_hotkey(app: &AppHandle) {
-    popup::trigger(app);
+    popup::trigger(app, None);
 }
 
 // MARK: Settings window

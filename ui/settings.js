@@ -52,11 +52,44 @@ async function save() {
 
 async function renderHotkeyStatus() {
   try {
-    $("#hotkey-error").textContent = (await invoke("hotkey_status")) ?? "";
+    const status = await invoke("hotkey_status");
+    $("#hotkey-error").textContent = status.error ?? "";
+    $("#hotkey-note").textContent = status.note ?? "";
   } catch (e) {
     $("#hotkey-error").textContent = String(e);
   }
 }
+
+// MARK: Wayland
+
+async function renderWayland() {
+  $("#wayland").hidden = info?.session !== "wayland";
+  if ($("#wayland").hidden) return;
+  const s = await invoke("wayland_status");
+  $("#wayland-status").className = s.connected ? "" : "muted";
+  $("#wayland-status").textContent = s.connected ? "✓ Allowed and active." : s.allowed ? "Allowed. Starts when you first use Grammable." : "Not allowed yet.";
+  $("#wayland-connect").hidden = s.connected;
+  $("#wayland-reset").hidden = !s.allowed && !s.connected;
+}
+
+$("#wayland-connect").addEventListener("click", async () => {
+  const button = $("#wayland-connect");
+  button.disabled = true;
+  $("#wayland-status").textContent = "Waiting for your answer in the desktop's dialog…";
+  try {
+    await invoke("wayland_connect");
+  } catch (e) {
+    $("#general-error").textContent = String(e);
+  } finally {
+    button.disabled = false;
+    renderWayland();
+  }
+});
+
+$("#wayland-reset").addEventListener("click", async () => {
+  await invoke("wayland_reset");
+  renderWayland();
+});
 
 function renderGeneral() {
   $("#onboarding").hidden = settings.hasCompletedOnboarding;
@@ -300,6 +333,7 @@ async function start() {
   $("#about-paths").textContent = `Settings: ${info.settingsPath}`;
   renderGeneral();
   renderHotkeyStatus();
+  renderWayland();
   renderDefaultBackend();
   renderExcluded();
   showTab(location.hash.slice(1));

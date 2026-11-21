@@ -26,6 +26,7 @@ fn letter(c: char, _vk: u32) -> Key {
 
 fn ctrl(key: Key) -> Result<(), String> {
     let err = |e: &dyn std::fmt::Display| format!("Could not send keystrokes: {e}");
+    crate::monitor::mark_synthetic();
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| err(&e))?;
     enigo.key(Key::Control, Press).map_err(|e| err(&e))?;
     let result = enigo.key(key, Click).map_err(|e| err(&e));

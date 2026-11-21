@@ -209,10 +209,21 @@ pub fn open_url(app: AppHandle, url: String) -> CmdResult<()> {
     app.opener().open_url(url, None::<&str>).map_err(err)
 }
 
-/// `None` when the shortcut works, otherwise why it couldn't be registered.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HotkeyStatus {
+    /// Why the shortcut couldn't be registered, if it couldn't.
+    error: Option<String>,
+    /// E.g. on Wayland: the shortcut the desktop actually uses, and where to change it.
+    note: Option<String>,
+}
+
 #[tauri::command]
-pub fn hotkey_status(state: State<AppState>) -> Option<String> {
-    state.hotkey_error.lock().unwrap().clone()
+pub fn hotkey_status(state: State<AppState>) -> HotkeyStatus {
+    HotkeyStatus {
+        error: state.hotkey_error.lock().unwrap().clone(),
+        note: state.hotkey_note.lock().unwrap().clone(),
+    }
 }
 
 #[derive(Serialize)]
@@ -251,4 +262,42 @@ pub fn session_type() -> String {
         _ if std::env::var_os("DISPLAY").is_some() => "x11".into(),
         _ => "unknown".into(),
     }
+}
+
+// MARK: Wayland
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WaylandStatus {
+    /// The user has allowed keyboard access before (a restore token is saved).
+    allowed: bool,
+    /// A portal session is running.
+    connected: bool,
+}
+
+#[tauri::command]
+pub async fn wayland_status() -> WaylandStatus {
+    #[cfg(target_os = "linux")]
+    {
+        use crate::platform::wayland;
+        WaylandStatus { allowed: wayland::has_saved_consent(), connected: wayland::is_connected().await }
+    }
+    #[cfg(not(target_os = "linux"))]
+    WaylandStatus { allowed: false, connected: false }
+}
+
+/// Starts the portal session, which shows the desktop's consent dialog if needed.
+#[tauri::command]
+pub async fn wayland_connect() -> CmdResult<()> {
+    #[cfg(target_os = "linux")]
+    return crate::platform::wayland::connect().await;
+    #[cfg(not(target_os = "linux"))]
+    Ok(())
+}
+
+/// Ends the session and forgets the consent; the desktop asks again next time.
+#[tauri::command]
+pub async fn wayland_reset() {
+    #[cfg(target_os = "linux")]
+    crate::platform::wayland::disconnect().await;
 }
