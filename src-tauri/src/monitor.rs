@@ -45,7 +45,9 @@ pub fn start(app: AppHandle) {
         .name("grammable-input".into())
         .spawn(move || {
             let mut watcher = Watcher::default();
+            platform::debug("button", "watching for selections");
             if let Err(e) = rdev::listen(move |event| watcher.handle(&app, event.event_type)) {
+                platform::debug("button", format!("input monitor failed: {e:?}"));
                 eprintln!("Grammable: can't watch for selections, so the G button is off: {e:?}");
             }
         })
@@ -146,8 +148,10 @@ fn check(app: &AppHandle) {
     if !settings.is_enabled || !settings.popup_on_selection || popup::is_visible(app) {
         return;
     }
+    platform::debug("button", "selection gesture seen, checking");
     let target = platform::foreground();
     if guard::check_target(target.as_ref(), &settings) != Verdict::Ok {
+        platform::debug("button", "not shown: excluded app or Grammable itself");
         return;
     }
     let text = match platform::probe_selection() {
@@ -158,9 +162,11 @@ fn check(app: &AppHandle) {
     };
     if let Some(text) = &text {
         if guard::check_text(Some(text), &settings) != Verdict::Ok {
+            platform::debug("button", "not shown: selection too short or too long");
             return;
         }
     }
     let Ok(mouse) = app.cursor_position() else { return };
+    platform::debug("button", format!("shown at {:.0},{:.0}", mouse.x, mouse.y));
     button::show(app, Pending { text, target, anchor: (mouse.x, mouse.y) });
 }

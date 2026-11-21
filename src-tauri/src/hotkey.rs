@@ -24,6 +24,7 @@ pub fn plugin() -> TauriPlugin<Wry> {
         .with_handler(|app, _shortcut, event| {
             // Act on press; the trigger waits for the modifiers to be released before copying.
             if event.state() == ShortcutState::Pressed {
+                crate::platform::debug("hotkey", "pressed");
                 popup::trigger(app, None);
             }
         })
@@ -62,6 +63,7 @@ pub fn register(app: &AppHandle, shortcut: &str) {
     if let Err(e) = &result {
         eprintln!("Grammable: {e}");
     }
+    crate::platform::debug("hotkey", format!("register {shortcut}: {:?}", result.as_ref().map(|_| "ok")));
     set_status(app, result.err(), None);
 }
 

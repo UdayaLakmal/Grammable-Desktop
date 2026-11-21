@@ -257,7 +257,10 @@ fn capture(app: &AppHandle, anchor: Option<(f64, f64)>) -> Option<View> {
     };
     match guard::check_target(target.as_ref(), &settings) {
         Verdict::Ok => {}
-        Verdict::Ignore => return None,
+        Verdict::Ignore => {
+            platform::debug("popup", "ignored: excluded app or Grammable itself");
+            return None;
+        }
         Verdict::Refuse { title, detail } => return message(title, detail),
     }
 

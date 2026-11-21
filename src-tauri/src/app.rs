@@ -53,6 +53,16 @@ pub fn run(args: &[String]) {
     // Plain launch → Settings. Login item and `--popup` stay quiet, except until onboarding is done.
     let show_settings_now = !background && (!popup || !settings.has_completed_onboarding);
 
+    crate::platform::debug(
+        "app",
+        format!(
+            "Grammable {} on {} ({}), log: {}",
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::OS,
+            commands::session_type(),
+            crate::platform::debug_log_path().display()
+        ),
+    );
     let app = tauri::Builder::default()
         // Must be the first plugin: a second launch forwards its arguments here and exits.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {

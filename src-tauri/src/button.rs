@@ -164,6 +164,7 @@ pub fn button_clicked(app: AppHandle) {
     let pending = with(&app, |s| s.pending.take());
     hide(&app);
     let Some(pending) = pending else { return };
+    platform::debug("button", format!("clicked; text known: {}", pending.text.is_some()));
     std::thread::spawn(move || {
         let settings = app.state::<AppState>().settings();
         // The app didn't expose its selection: copy it now. It still has focus,

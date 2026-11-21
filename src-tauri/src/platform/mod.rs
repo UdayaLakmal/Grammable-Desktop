@@ -24,10 +24,43 @@ use windows as imp;
 
 use std::thread::sleep;
 
-/// With `GRAMMABLE_DEBUG=1`, logs what Grammable is doing (never the text itself).
+/// With `GRAMMABLE_DEBUG=1`, logs what Grammable is doing — app names, lengths
+/// and outcomes, never the text itself — to stderr and to `debug.log` next to
+/// settings.json (Windows has no console for a tray app).
 pub fn debug(area: &str, message: impl std::fmt::Display) {
-    if std::env::var_os("GRAMMABLE_DEBUG").is_some() {
-        eprintln!("[{area}] {message}");
+    if std::env::var_os("GRAMMABLE_DEBUG").is_none() {
+        return;
+    }
+    let line = format!("[{area}] {message}");
+    eprintln!("{line}");
+    use std::io::Write;
+    static FILE: std::sync::Mutex<Option<std::fs::File>> = std::sync::Mutex::new(None);
+    let mut file = FILE.lock().unwrap_or_else(|e| e.into_inner());
+    if file.is_none() {
+        let path = debug_log_path();
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        // Start fresh each run, so the file only holds this session.
+        *file = std::fs::File::create(&path).ok();
+    }
+    if let Some(f) = file.as_mut() {
+        let elapsed = START.get_or_init(Instant::now).elapsed().as_secs_f32();
+        let _ = writeln!(f, "{elapsed:8.3}s {line}");
+    }
+}
+
+static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+
+pub fn debug_log_path() -> std::path::PathBuf {
+    crate::settings::Settings::path().with_file_name("debug.log")
+}
+
+fn probe_kind(probe: &Probe) -> String {
+    match probe {
+        Probe::Password => "password field".into(),
+        Probe::Text(t) => format!("text, {} chars", t.chars().count()),
+        Probe::Unknown => "not exposed".into(),
     }
 }
 use std::time::{Duration, Instant};
@@ -60,7 +93,12 @@ pub enum Probe {
 }
 
 pub fn foreground() -> Option<Target> {
-    imp::foreground()
+    let target = imp::foreground();
+    debug(
+        "platform",
+        format!("foreground app: {:?}", target.as_ref().map(|t| t.process.clone().unwrap_or_else(|| "?".into()))),
+    );
+    target
 }
 
 /// Brings `target` back to the front. Returns false if the system refused.
@@ -69,7 +107,9 @@ pub fn activate(target: &Target) -> bool {
 }
 
 pub fn probe_selection() -> Probe {
-    imp::probe_selection()
+    let probe = imp::probe_selection();
+    debug("platform", format!("UI Automation selection: {}", probe_kind(&probe)));
+    probe
 }
 
 /// X11: the PRIMARY selection, which holds whatever was selected last.
@@ -115,13 +155,16 @@ pub fn copy_selection() -> Option<String> {
         }
     });
     clipboard::restore(saved);
+    debug("platform", format!("Ctrl+C copied: {:?} chars", copied.as_ref().map(|t| t.chars().count())));
     copied
 }
 
 /// Pastes `text` into `target` through the clipboard, then puts the old clipboard back.
 pub fn paste(text: &str, target: Option<&Target>) -> Result<(), String> {
     if let Some(target) = target {
-        if !activate(target) {
+        let activated = activate(target);
+        debug("platform", format!("brought {:?} back to the front: {activated}", target.process));
+        if !activated {
             eprintln!("Grammable: could not bring the original window back to the front");
         }
         sleep(Duration::from_millis(120));
@@ -131,6 +174,7 @@ pub fn paste(text: &str, target: Option<&Target>) -> Result<(), String> {
         return Err("Could not put the text on the clipboard.".into());
     }
     keys::paste()?;
+    debug("platform", format!("Ctrl+V sent ({} chars)", text.chars().count()));
     // Give the app time to read the clipboard before restoring it.
     sleep(Duration::from_millis(450));
     // Only restore if nobody else has changed the clipboard in the meantime.
