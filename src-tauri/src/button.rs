@@ -118,6 +118,27 @@ fn show_without_focus(window: &tauri::WebviewWindow) {
     let _ = window.show();
 }
 
+/// Hides with the same Win32 call that showed it. The button is shown behind
+/// tao's back (to avoid taking focus), so tao still thinks it's hidden and
+/// `window.hide()` is a no-op: it only acts when its own visible flag changes.
+#[cfg(windows)]
+fn hide_window(window: &tauri::WebviewWindow) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+    match window.hwnd() {
+        Ok(hwnd) => unsafe {
+            ShowWindow(hwnd.0 as _, SW_HIDE);
+        },
+        Err(_) => {
+            let _ = window.hide();
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn hide_window(window: &tauri::WebviewWindow) {
+    let _ = window.hide();
+}
+
 pub fn hide(app: &AppHandle) {
     let was_visible = with(app, |s| {
         s.pending = None;
@@ -126,8 +147,9 @@ pub fn hide(app: &AppHandle) {
     });
     if was_visible {
         if let Some(window) = app.get_webview_window(LABEL) {
-            let _ = window.hide();
+            hide_window(&window);
         }
+        platform::debug("button", "hidden");
     }
 }
 
