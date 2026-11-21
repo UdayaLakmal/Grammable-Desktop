@@ -14,7 +14,7 @@ Milestones M1–M4 are written: app shell, hotkey → popup → replace, Wayland
 | CLI mode (`src-tauri/src/cli.rs`) | Done. |
 | M1 app shell: tray, Settings window, single instance, launch at login, first-run backend | Done. Runs on Ubuntu. |
 | M2: hotkey → capture → popup → review → Replace/Copy | Written. Popup UI checked in a browser with a mock API. The Linux part targets X11: on Wayland it only reaches X11 (XWayland) apps until M3. **Windows code (`platform/windows.rs`, UI Automation) has never been compiled.** |
-| M3 Wayland (`platform/wayland.rs`) | Written and partly tested on GNOME 50. Copy (portal Ctrl+Insert), clipboard read, paste (Shift+Insert) and saved consent all worked in `grammable --portal-test`. The shortcut portal and popup focus still need a real run. |
+| M3 Wayland (`platform/wayland.rs`) | **Works on GNOME 50**, from a fresh `.deb` install: shortcut registration, the keyboard-access dialog (in the welcome card), popup focus, menu, AI run and Replace. |
 | M4 G button (`button.rs`, `monitor.rs`, `ui/trigger.html`) | Written, never run: Windows and X11 only, and this machine is on Wayland. |
 | M5 hotkey recorder, M6 CI/release | Not started. |
 
@@ -31,6 +31,11 @@ Milestones M1–M4 are written: app shell, hotkey → popup → replace, Wayland
 - **App identity:** the portals identify the app as `io.github.udayalakmal.grammable` (`register_host_app`).
   - If no `.desktop` file with that name exists, Grammable writes one to `~/.local/share/applications`.
   - Release packages must install it under that name.
+- **Asking for consent:** on Wayland the welcome card asks first, with an "Allow keyboard access…" step that explains GNOME's *Remote Desktop* dialog. GNOME's wording and title can't be changed.
+  - The dialog is attached to the Settings window only when that window is X11.
+  - Attaching it to a native Wayland window needs an xdg-foreign export that outlives the dialog. When the export went away early, GNOME silently dropped the session.
+- **Popup page:** it measures itself synchronously. A hidden WebKit window gets no `requestAnimationFrame` callbacks, so the popup never appeared.
+- **Packaging:** the `.deb` installs `io.github.udayalakmal.grammable.desktop`, the portal app id, through `bundle.linux.deb.files`. Tauri's own `Grammable.desktop` is hidden with `NoDisplay` (`src-tauri/linux/`).
 - **Debug:** `GRAMMABLE_DEBUG=1` logs portal traffic. `grammable --portal-test [--paste]` checks the copy path by hand: you select the text yourself, so it never acts on a window you didn't choose.
 
 ### M4: G button notes

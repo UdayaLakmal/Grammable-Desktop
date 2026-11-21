@@ -19,6 +19,10 @@ use crate::platform::{self, Probe, Target};
 
 pub const LABEL: &str = "popup";
 
+/// Wayland: shortcut releases counted when the trigger started.
+#[cfg(target_os = "linux")]
+static RELEASES_AT_TRIGGER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// What the page should show.
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "phase", rename_all = "camelCase")]
@@ -97,7 +101,8 @@ fn open(app: &AppHandle, view: View) {
         inner.had_focus = false;
     }
     // The page renders, measures itself and calls `popup_resize`, which shows the window.
-    let _ = app.emit_to(LABEL, "popup-open", view);
+    let sent = app.emit_to(LABEL, "popup-open", view);
+    platform::debug("popup", format!("asked the page to render: {sent:?}"));
 }
 
 /// Opens the action menu for text captured elsewhere (the G button).
@@ -158,6 +163,8 @@ pub fn place(anchor: (f64, f64), size: (f64, f64), area: (f64, f64, f64, f64), g
 /// Hotkey, tray item or `grammable --popup`: read the selection and show the menu.
 /// `activation_token` comes from the Wayland shortcut portal.
 pub fn trigger(app: &AppHandle, activation_token: Option<String>) {
+    #[cfg(target_os = "linux")]
+    RELEASES_AT_TRIGGER.store(platform::wayland::releases(), Ordering::SeqCst);
     let state = app.state::<AppState>().settings();
     if !state.is_enabled {
         return;
@@ -169,8 +176,10 @@ pub fn trigger(app: &AppHandle, activation_token: Option<String>) {
     crate::button::hide(app);
     let popup = app.state::<Popup>();
     if popup.capturing.swap(true, Ordering::SeqCst) {
+        platform::debug("popup", "already capturing");
         return;
     }
+    platform::debug("popup", "triggered");
     popup.lock().activation_token = activation_token;
     // Wayland doesn't reveal the mouse position; the desktop places the popup.
     let anchor = if is_wayland() {
@@ -181,6 +190,7 @@ pub fn trigger(app: &AppHandle, activation_token: Option<String>) {
     let app = app.clone();
     std::thread::spawn(move || {
         let view = capture(&app, anchor);
+        platform::debug("popup", format!("capture result: {view:?}"));
         app.state::<Popup>().capturing.store(false, Ordering::SeqCst);
         if let Some(view) = view {
             open(&app, view);
@@ -199,8 +209,10 @@ fn is_wayland() -> bool {
 /// copies with Ctrl+Insert, which doesn't interrupt programs in terminals.
 #[cfg(target_os = "linux")]
 fn capture_wayland(app: &AppHandle, settings: &crate::settings::Settings) -> Option<View> {
-    // Give the user a moment to let go of the shortcut's keys.
-    std::thread::sleep(Duration::from_millis(250));
+    // Wait for the user to let go of the shortcut, or the copy keys mix with it.
+    let released = platform::wayland::wait_for_release(RELEASES_AT_TRIGGER.load(Ordering::SeqCst), Duration::from_millis(1500));
+    platform::debug("popup", format!("shortcut released: {released}"));
+    std::thread::sleep(Duration::from_millis(120));
     let text = match tauri::async_runtime::block_on(platform::wayland::copy_selection()) {
         Ok(text) => text,
         Err(e) => {
@@ -340,6 +352,7 @@ pub fn popup_resize(app: AppHandle, popup: State<Popup>, width: f64, height: f64
         }
         inner.anchor
     };
+    platform::debug("popup", format!("resize to {width}×{height}, anchor {anchor:?}"));
     let window = app.get_webview_window(LABEL).ok_or("no popup window")?;
     window.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
     match anchor.and_then(|(x, y)| app.monitor_from_point(x, y).ok().flatten().map(|m| (x, y, m))) {
@@ -369,6 +382,7 @@ pub fn popup_resize(app: AppHandle, popup: State<Popup>, width: f64, height: f64
             }
         }
         window.show().map_err(|e| e.to_string())?;
+        platform::debug("popup", "shown");
     }
     let _ = window.set_focus();
     Ok(())

@@ -31,7 +31,9 @@ function render() {
   else if (state.phase === "working") renderWorking();
   else if (state.phase === "review") renderReview();
   else if (state.phase === "message") renderMessage();
-  if (state.phase !== "hidden") requestAnimationFrame(resize);
+  // Measure now: a hidden window gets no animation frames, and the window is
+  // only shown once Rust knows the size.
+  if (state.phase !== "hidden") resize();
 }
 
 /** Tells Rust the card's size, so the window fits it (and is shown). */
@@ -193,7 +195,8 @@ function renderRewrite(r) {
   original.open = state.showOriginal;
   original.addEventListener("toggle", () => { state.showOriginal = original.open; resize(); });
   card.append(edit, original);
-  requestAnimationFrame(() => { fit(); edit.focus(); edit.setSelectionRange(0, 0); resize(); });
+  fit();
+  setTimeout(() => { edit.focus(); edit.setSelectionRange(0, 0); }, 0);
 }
 
 function renderMessage() {

@@ -76,6 +76,15 @@
       <div class="notice welcome" id="onboarding" hidden>
         <strong>Welcome to Grammable</strong>
         <ol>
+          <li id="onboarding-wayland" hidden>
+            <strong>Allow keyboard access.</strong> Grammable copies your selection and pastes the result through
+            your desktop's permission. It asks in a window titled <em>Remote Desktop</em>: keep both switches on,
+            leave <em>Remember This Selection</em> ticked, and click <strong>Share</strong>.
+            <div style="margin-top:6px">
+              <button class="btn small primary" id="onboarding-allow">Allow keyboard access…</button>
+              <span id="onboarding-allow-status" class="muted"></span>
+            </div>
+          </li>
           <li>Select text in any app.</li>
           <li>Press <kbd id="onboarding-hotkey">Ctrl+Alt+G</kbd>, or click the <strong>G</strong> button that appears next to it.</li>
           <li>Pick an action, review the suggestion, then <strong>Replace</strong>.</li>

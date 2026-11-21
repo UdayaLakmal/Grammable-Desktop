@@ -34,6 +34,7 @@ rdev = "0.5"
 x11rb = "0.13"
 libc = "0.2"
 gtk = "0.18"
+raw-window-handle = "0.6"
 ashpd = { version = "0.14", features = ["global_shortcuts", "remote_desktop", "screencast", "clipboard"] }
 
 [target.'cfg(windows)'.dependencies]
@@ -47,4 +48,4 @@ windows-sys = { version = "0.61", features = [
 uiautomation = "0.25"
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }

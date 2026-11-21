@@ -29,6 +29,10 @@ pub const APP_ID: &str = "io.github.udayalakmal.grammable";
 const KEY_CONTROL_L: i32 = 0xffe3;
 const KEY_SHIFT_L: i32 = 0xffe1;
 const KEY_INSERT: i32 = 0xff63;
+const KEY_ALT_L: i32 = 0xffe9;
+const KEY_ALT_R: i32 = 0xffea;
+const KEY_ISO_LEVEL3: i32 = 0xfe03; // AltGr
+const KEY_SUPER_L: i32 = 0xffeb;
 const TEXT_TYPES: &[&str] = &["text/plain;charset=utf-8", "text/plain", "UTF8_STRING", "STRING", "TEXT"];
 
 struct Portal {
@@ -76,11 +80,16 @@ pub fn is_wayland() -> bool {
 /// The running portal session, starting one if needed. Without a saved token
 /// this shows the desktop's "Allow remote interaction?" dialog and waits for it.
 async fn portal() -> Result<Arc<Portal>, String> {
+    portal_with_parent(None).await
+}
+
+/// Like `portal`, with the consent dialog attached to one of Grammable's windows.
+async fn portal_with_parent(parent: Option<&ashpd::WindowIdentifier>) -> Result<Arc<Portal>, String> {
     let mut slot = portal_slot().lock().await;
     if let Some(p) = slot.as_ref() {
         return Ok(p.clone());
     }
-    let p = Arc::new(start().await?);
+    let p = Arc::new(start(parent).await?);
     serve_clipboard(p.clone());
     watch_owner(p.clone());
     *slot = Some(p.clone());
@@ -102,7 +111,7 @@ async fn register_app() {
     .await;
 }
 
-async fn start() -> Result<Portal, String> {
+async fn start(parent: Option<&ashpd::WindowIdentifier>) -> Result<Portal, String> {
     register_app().await;
     let err = |what: &str, e: ashpd::Error| format!("{what}: {e}");
     let remote = RemoteDesktop::new().await.map_err(|e| err("Remote desktop portal unavailable", e))?;
@@ -126,7 +135,7 @@ async fn start() -> Result<Portal, String> {
         .await
         .map_err(|e| err("Could not select the keyboard", e))?;
     let started = remote
-        .start(&session, None, Default::default())
+        .start(&session, parent, Default::default())
         .await
         .map_err(|e| err("Could not start the session", e))?
         .response()
@@ -186,9 +195,16 @@ fn serve_clipboard(portal: Arc<Portal>) {
     });
 }
 
-/// Starts the session now, e.g. from Settings, so the consent dialog appears at a sensible moment.
-pub async fn connect() -> Result<(), String> {
-    portal().await.map(|_| ())
+/// Starts the session now, e.g. from Settings, so the consent dialog appears
+/// at a sensible moment. `x11_parent` attaches the dialog to one of
+/// Grammable's windows when that window is an X11 one (XWayland). For native
+/// Wayland windows the dialog stays standalone: attaching needs an xdg-foreign
+/// export that must outlive the dialog on GTK's thread, and when it went away
+/// early GNOME silently dropped the session.
+pub async fn connect(x11_parent: Option<u64>) -> Result<(), String> {
+    let identifier = x11_parent.map(|xid| ashpd::WindowIdentifier::from_xid(xid as std::os::raw::c_ulong));
+    debug(format!("consent dialog attached to a window: {}", identifier.is_some()));
+    portal_with_parent(identifier.as_ref()).await.map(|_| ())
 }
 
 /// Whether a session is running right now.
@@ -208,6 +224,11 @@ async fn chord(modifier: i32, key: i32) -> Result<(), String> {
     let p = portal().await?;
     let send = |sym, state| p.remote.notify_keyboard_keysym(&p.session, sym, state, Default::default());
     let result = async {
+        // If the shortcut's Alt is still held, the app would see Ctrl+Alt+Insert.
+        // Releasing keys that aren't down is ignored.
+        for key in [KEY_ALT_L, KEY_ALT_R, KEY_ISO_LEVEL3, KEY_SUPER_L] {
+            send(key, KeyState::Released).await?;
+        }
         send(modifier, KeyState::Pressed).await?;
         send(key, KeyState::Pressed).await?;
         send(key, KeyState::Released).await?;
@@ -234,9 +255,26 @@ fn blocking(fd: std::os::fd::OwnedFd) -> std::os::fd::OwnedFd {
 }
 
 fn debug(message: impl std::fmt::Display) {
-    if std::env::var_os("GRAMMABLE_DEBUG").is_some() {
-        eprintln!("[wayland] {message}");
+    super::debug("wayland", message);
+}
+
+/// Counts shortcut releases, so the copy can wait until the user lets go.
+static RELEASES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Waits (up to `limit`) for the shortcut to be released after `since` releases.
+pub fn wait_for_release(since: u64, limit: Duration) -> bool {
+    let deadline = Instant::now() + limit;
+    while RELEASES.load(std::sync::atomic::Ordering::SeqCst) <= since {
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(15));
     }
+    true
+}
+
+pub fn releases() -> u64 {
+    RELEASES.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 /// The clipboard's text. Grammable can't read its own offer through the
@@ -325,10 +363,12 @@ async fn wait_for_foreign_owner(since: u64, limit: Duration) -> bool {
 /// Copies the focused app's selection and returns it. The clipboard is restored (text only).
 pub async fn copy_selection() -> Result<Option<String>, String> {
     portal().await?;
+    debug("copying the selection");
     let saved = read_clipboard().await;
     let before = owner().changes;
     chord(KEY_CONTROL_L, KEY_INSERT).await?;
     if !wait_for_foreign_owner(before, Duration::from_millis(600)).await {
+        debug("nothing was copied");
         return Ok(None); // nothing selected, or the app ignored the keys
     }
     let copied = read_clipboard().await;
@@ -437,10 +477,19 @@ pub async fn bind_shortcut(
         .map(|s| s.trigger_description().to_string())
         .unwrap_or_default();
     let activations = portal.receive_activated().await.map_err(err)?;
+    let deactivations = portal.receive_deactivated().await.map_err(err)?;
+    tokio::spawn(async move {
+        let mut deactivations = Box::pin(deactivations);
+        while let Some(event) = deactivations.next().await {
+            debug(format!("shortcut released: {}", event.shortcut_id()));
+            RELEASES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    });
     tokio::spawn(async move {
         let _keep = (&portal, &session); // the binding lives as long as the session
         let mut activations = Box::pin(activations);
         while let Some(event) = activations.next().await {
+            debug(format!("shortcut pressed: {}", event.shortcut_id()));
             if event.shortcut_id() == SHORTCUT_ID {
                 let token = event
                     .options()

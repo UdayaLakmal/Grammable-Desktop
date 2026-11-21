@@ -71,7 +71,7 @@ async fn portal_test(mode: Option<&str>) -> i32 {
     use crate::platform::wayland;
     eprintln!("Starting the portal session. Allow keyboard access if your desktop asks…");
     let started = std::time::Instant::now();
-    if let Err(e) = wayland::connect().await {
+    if let Err(e) = wayland::connect(None).await {
         eprintln!("✗ {e}");
         return 1;
     }

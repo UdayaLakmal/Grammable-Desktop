@@ -3358,6 +3358,7 @@ dependencies = [
  "grammable-core",
  "gtk",
  "libc",
+ "raw-window-handle",
  "rdev",
  "serde",
  "serde_json",

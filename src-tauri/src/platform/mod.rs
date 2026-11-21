@@ -23,6 +23,13 @@ mod windows;
 use windows as imp;
 
 use std::thread::sleep;
+
+/// With `GRAMMABLE_DEBUG=1`, logs what Grammable is doing (never the text itself).
+pub fn debug(area: &str, message: impl std::fmt::Display) {
+    if std::env::var_os("GRAMMABLE_DEBUG").is_some() {
+        eprintln!("[{area}] {message}");
+    }
+}
 use std::time::{Duration, Instant};
 
 /// The window the user was writing in when Grammable was invoked.

@@ -63,28 +63,38 @@ async function renderHotkeyStatus() {
 // MARK: Wayland
 
 async function renderWayland() {
-  $("#wayland").hidden = info?.session !== "wayland";
-  if ($("#wayland").hidden) return;
+  const wayland = info?.session === "wayland";
+  $("#wayland").hidden = !wayland;
+  $("#onboarding-wayland").hidden = !wayland;
+  if (!wayland) return;
   const s = await invoke("wayland_status");
+  const done = s.allowed || s.connected;
+  $("#onboarding-allow").hidden = done;
+  $("#onboarding-allow-status").className = done ? "" : "muted";
+  $("#onboarding-allow-status").textContent = done ? "✓ Allowed" : "";
   $("#wayland-status").className = s.connected ? "" : "muted";
   $("#wayland-status").textContent = s.connected ? "✓ Allowed and active." : s.allowed ? "Allowed. Starts when you first use Grammable." : "Not allowed yet.";
   $("#wayland-connect").hidden = s.connected;
   $("#wayland-reset").hidden = !s.allowed && !s.connected;
 }
 
-$("#wayland-connect").addEventListener("click", async () => {
-  const button = $("#wayland-connect");
+async function allowKeyboardAccess(button, status) {
   button.disabled = true;
-  $("#wayland-status").textContent = "Waiting for your answer in the desktop's dialog…";
+  status.className = "muted";
+  status.textContent = "Waiting for your answer in the Remote Desktop window…";
   try {
     await invoke("wayland_connect");
+    $("#general-error").textContent = "";
   } catch (e) {
     $("#general-error").textContent = String(e);
+    status.textContent = "Not allowed. You can try again any time.";
   } finally {
     button.disabled = false;
     renderWayland();
   }
-});
+}
+$("#wayland-connect").addEventListener("click", () => allowKeyboardAccess($("#wayland-connect"), $("#wayland-status")));
+$("#onboarding-allow").addEventListener("click", () => allowKeyboardAccess($("#onboarding-allow"), $("#onboarding-allow-status")));
 
 $("#wayland-reset").addEventListener("click", async () => {
   await invoke("wayland_reset");

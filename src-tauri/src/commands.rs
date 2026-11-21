@@ -286,13 +286,25 @@ pub async fn wayland_status() -> WaylandStatus {
     WaylandStatus { allowed: false, connected: false }
 }
 
-/// Starts the portal session, which shows the desktop's consent dialog if needed.
+/// Starts the portal session, which shows the desktop's consent dialog if
+/// needed, attached to the window that asked (Settings).
 #[tauri::command]
-pub async fn wayland_connect() -> CmdResult<()> {
+pub async fn wayland_connect(window: tauri::WebviewWindow) -> CmdResult<()> {
     #[cfg(target_os = "linux")]
-    return crate::platform::wayland::connect().await;
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        let x11_parent = match window.window_handle().map(|h| h.as_raw()) {
+            Ok(RawWindowHandle::Xlib(h)) => Some(h.window as u64),
+            Ok(RawWindowHandle::Xcb(h)) => Some(u64::from(h.window.get())),
+            _ => None,
+        };
+        return crate::platform::wayland::connect(x11_parent).await;
+    }
     #[cfg(not(target_os = "linux"))]
-    Ok(())
+    {
+        let _ = window;
+        Ok(())
+    }
 }
 
 /// Ends the session and forgets the consent; the desktop asks again next time.
