@@ -10,6 +10,12 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
+mod button;
+mod guard;
+mod hotkey;
+mod monitor;
+mod platform;
+mod popup;
 mod cli;
 mod commands;
 mod settings;

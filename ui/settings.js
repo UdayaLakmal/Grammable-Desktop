@@ -50,6 +50,57 @@ async function save() {
   }, 150);
 }
 
+async function renderHotkeyStatus() {
+  try {
+    const status = await invoke("hotkey_status");
+    $("#hotkey-error").textContent = status.error ?? "";
+    $("#hotkey-note").textContent = status.note ?? "";
+  } catch (e) {
+    $("#hotkey-error").textContent = String(e);
+  }
+}
+
+// MARK: Wayland
+
+async function renderWayland() {
+  const wayland = info?.session === "wayland";
+  $("#wayland").hidden = !wayland;
+  $("#onboarding-wayland").hidden = !wayland;
+  if (!wayland) return;
+  const s = await invoke("wayland_status");
+  const done = s.allowed || s.connected;
+  $("#onboarding-allow").hidden = done;
+  $("#onboarding-allow-status").className = done ? "" : "muted";
+  $("#onboarding-allow-status").textContent = done ? "✓ Allowed" : "";
+  $("#wayland-status").className = s.connected ? "" : "muted";
+  $("#wayland-status").textContent = s.connected ? "✓ Allowed and active." : s.allowed ? "Allowed. Starts when you first use Grammable." : "Not allowed yet.";
+  $("#wayland-connect").hidden = s.connected;
+  $("#wayland-reset").hidden = !s.allowed && !s.connected;
+}
+
+async function allowKeyboardAccess(button, status) {
+  button.disabled = true;
+  status.className = "muted";
+  status.textContent = "Waiting for your answer in the Remote Desktop window…";
+  try {
+    await invoke("wayland_connect");
+    $("#general-error").textContent = "";
+  } catch (e) {
+    $("#general-error").textContent = String(e);
+    status.textContent = "Not allowed. You can try again any time.";
+  } finally {
+    button.disabled = false;
+    renderWayland();
+  }
+}
+$("#wayland-connect").addEventListener("click", () => allowKeyboardAccess($("#wayland-connect"), $("#wayland-status")));
+$("#onboarding-allow").addEventListener("click", () => allowKeyboardAccess($("#onboarding-allow"), $("#onboarding-allow-status")));
+
+$("#wayland-reset").addEventListener("click", async () => {
+  await invoke("wayland_reset");
+  renderWayland();
+});
+
 function renderGeneral() {
   $("#onboarding").hidden = settings.hasCompletedOnboarding;
   $("#onboarding-hotkey").textContent = settings.hotkey;
@@ -291,6 +342,8 @@ async function start() {
   $("#about-version").textContent = `Version ${info.version} · ${info.platform}${info.session !== info.platform ? ` (${info.session})` : ""}`;
   $("#about-paths").textContent = `Settings: ${info.settingsPath}`;
   renderGeneral();
+  renderHotkeyStatus();
+  renderWayland();
   renderDefaultBackend();
   renderExcluded();
   showTab(location.hash.slice(1));
@@ -299,6 +352,7 @@ async function start() {
   await tauri.event.listen("settings-changed", (e) => {
     settings = e.payload;
     renderGeneral();
+    renderHotkeyStatus();
     renderDefaultBackend();
     renderExcluded();
   });

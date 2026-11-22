@@ -5,18 +5,68 @@ Delete this file once the app ships.
 
 ## Status — 2026-11-19
 
-Core crate and command-line mode build and pass their tests on Ubuntu (Rust 1.100).
-Nothing has been built on Windows yet.
+Milestones M1–M4 are written: app shell, hotkey → popup → replace, Wayland portals, and the G button. All tests pass on Ubuntu (Rust 1.100), but nothing has been built on Windows yet.
 
 | Part | State |
 |---|---|
-| `crates/grammable-core` — presets, prompt, diff, engine, backends | Ported from the Swift `GrammableCore`. **Builds, 31 tests pass** on Ubuntu. |
-| `crates/grammable-core/src/backends/builtin.rs` — Harper offline checker | Works. Slow (~7 s per check in a debug build) and over-eager: it applies style lints too (e.g. "stdin" → "standard input"). Restrict it to spelling/grammar lints. |
-| `src-tauri/` — CLI mode | **Done:** `--list`, `--status`, `--run <preset> [--backend <id>] [--diff] [text]`, `--version`, `--help` (same as macOS). Settings in `settings.rs`. Windows `AttachConsole` not yet compiled on Windows. |
-| `src-tauri/` — the desktop app | No Tauri yet; running without arguments prints a notice. |
-| `ui/` — popup, review, settings | Not started. |
-| `.github/workflows/` — CI, release, winget | Not started. |
-| App icons | Only `src-tauri/icons/app-icon-1024.png` (copied from the macOS app). Generate the rest with `npx tauri icon`. |
+| `crates/grammable-core` | Done. 36 tests pass. |
+| Harper built-in checker (`backends/builtin.rs`) | Works, but slow (~7 s per check in a debug build). It also applies style lints, e.g. "stdin" → "standard input"; restrict it to spelling and grammar. |
+| CLI mode (`src-tauri/src/cli.rs`) | Done. |
+| M1 app shell: tray, Settings window, single instance, launch at login, first-run backend | Done. Runs on Ubuntu. |
+| M2: hotkey → capture → popup → review → Replace/Copy | Written. Popup UI checked in a browser with a mock API. The Linux part targets X11: on Wayland it only reaches X11 (XWayland) apps until M3. **Windows code (`platform/windows.rs`, UI Automation) has never been compiled.** |
+| M3 Wayland (`platform/wayland.rs`) | **Works on GNOME 50**, from a fresh `.deb` install: shortcut registration, the keyboard-access dialog (in the welcome card), popup focus, menu, AI run and Replace. |
+| M4 G button (`button.rs`, `monitor.rs`, `ui/trigger.html`) | Written, never run: Windows and X11 only, and this machine is on Wayland. |
+| M5 hotkey recorder, M6 CI/release | Not started. |
+
+### M3: Wayland notes
+- **RemoteDesktop portal** (keyboard only) plus the **Clipboard portal** on the same session.
+  - Consent is asked once; the restore token is saved in `portal-token` next to `settings.json`.
+  - The session starts on first use, or from Settings › General › Wayland › Allow….
+- **Copy and paste keys:** Ctrl+Insert to copy, Shift+Insert to paste. There's no excluded-app check on Wayland, and Ctrl+C would interrupt a program running in a terminal.
+- **Clipboard reads only work for formats GNOME has announced** in `SelectionOwnerChanged` (otherwise "Internal error").
+  - Grammable can't read its own offer back, so it answers that from memory.
+  - The portal's file descriptors are non-blocking; they are switched to blocking and read on a worker thread.
+- **Shortcut:** bound through the GlobalShortcuts portal on first run. After that GNOME owns it (Settings › Apps › Grammable), so changing the hotkey in Grammable has no effect there.
+  - The shortcut's activation token is passed to the popup (`gtk_window_set_startup_id`), so GNOME focuses it.
+- **App identity:** the portals identify the app as `io.github.udayalakmal.grammable` (`register_host_app`).
+  - If no `.desktop` file with that name exists, Grammable writes one to `~/.local/share/applications`.
+  - Release packages must install it under that name.
+- **Asking for consent:** on Wayland the welcome card asks first, with an "Allow keyboard access…" step that explains GNOME's *Remote Desktop* dialog. GNOME's wording and title can't be changed.
+  - The dialog is attached to the Settings window only when that window is X11.
+  - Attaching it to a native Wayland window needs an xdg-foreign export that outlives the dialog. When the export went away early, GNOME silently dropped the session.
+- **Popup page:** it measures itself synchronously. A hidden WebKit window gets no `requestAnimationFrame` callbacks, so the popup never appeared.
+- **Packaging:** the `.deb` installs `io.github.udayalakmal.grammable.desktop`, the portal app id, through `bundle.linux.deb.files`. Tauri's own `Grammable.desktop` is hidden with `NoDisplay` (`src-tauri/linux/`).
+- **Debug:** `GRAMMABLE_DEBUG=1` logs portal traffic. `grammable --portal-test [--paste]` checks the copy path by hand: you select the text yourself, so it never acts on a window you didn't choose.
+
+### M4: G button notes
+- **Watching input:** `rdev` listens for mouse and keyboard events (low-level hooks on Windows, XRecord on X11). Only which keys are pressed is looked at, never the text typed.
+- **What counts as a selection:** a drag of at least 5 px, a double or triple click, Shift with an arrow key or Home/End/PgUp/PgDn, or Ctrl+A. After 180 ms Grammable checks the selection:
+  - Excluded apps are skipped.
+  - Text is read through UI Automation on Windows, or PRIMARY on X11.
+  - Otherwise the text is copied only when the button is clicked.
+- **The button:** 28 px; it never takes focus (`focusable(false)`, plus `SW_SHOWNOACTIVATE` on Windows). It hides after 5 s unless the mouse is on it, and on any other click, key press or scroll.
+- **Grammable's own keystrokes:** ignored for 400 ms (`monitor::mark_synthetic`).
+
+
+
+### M2 layout
+- `src-tauri/src/platform/`:
+  - `mod.rs`: copy with a marker on the clipboard, then paste.
+  - `clipboard.rs`: one long-lived arboard handle. Its own writes are kept out of clipboard history.
+  - `keys.rs`: Ctrl+C and Ctrl+V via enigo.
+  - `x11.rs`: EWMH active window, process name from `/proc`, modifier state.
+  - `windows.rs`: Win32 and UI Automation, including `IsPassword`.
+- `guard.rs`: excluded apps, Grammable's own windows, minimum length and the 30,000-character limit.
+- `popup.rs`:
+  - Hidden popup window. It closes when it loses focus.
+  - Placement maths, with tests.
+  - Commands: `popup_context`, `popup_resize`, `popup_run` (cancellable), `popup_replace`, `popup_copy`.
+- `hotkey.rs`: tauri-plugin-global-shortcut. It acts on key press, then waits for the modifier keys to be released before copying. Settings shows any registration error.
+- `ui/popup.{html,css,js}`:
+  - Keys: 1–9, the arrow keys and Enter in the menu.
+  - Enter replaces (Ctrl+Enter in the rewrite editor), Ctrl+Shift+C copies, Esc closes.
+- On X11 the hotkey always copies with Ctrl+C. It doesn't use PRIMARY, because PRIMARY may hold a selection from another app. PRIMARY is for the G button (M4).
+- The tray item "Improve Selected Text" usually finds nothing, because the tray menu takes focus. Use the shortcut.
 
 ## Decisions
 

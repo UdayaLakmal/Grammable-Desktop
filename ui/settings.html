@@ -76,12 +76,37 @@
       <div class="notice welcome" id="onboarding" hidden>
         <strong>Welcome to Grammable</strong>
         <ol>
+          <li id="onboarding-wayland" hidden>
+            <strong>Allow keyboard access.</strong> Grammable copies your selection and pastes the result through
+            your desktop's permission. It asks in a window titled <em>Remote Desktop</em>: keep both switches on,
+            leave <em>Remember This Selection</em> ticked, and click <strong>Share</strong>.
+            <div style="margin-top:6px">
+              <button class="btn small primary" id="onboarding-allow">Allow keyboard access…</button>
+              <span id="onboarding-allow-status" class="muted"></span>
+            </div>
+          </li>
           <li>Select text in any app.</li>
           <li>Press <kbd id="onboarding-hotkey">Ctrl+Alt+G</kbd>, or click the <strong>G</strong> button that appears next to it.</li>
           <li>Pick an action, review the suggestion, then <strong>Replace</strong>.</li>
         </ol>
         <span class="muted">Grammable lives in the system tray. Pick your AI under <a href="#backends">AI Backends</a>.</span>
         <div style="margin-top:10px"><button class="btn primary" id="onboarding-done">Got it</button></div>
+      </div>
+
+      <div id="wayland" hidden>
+        <h2>Wayland</h2>
+        <div class="card">
+          <div class="row">
+            <div class="label">Keyboard access<small>Grammable copies your selection and pastes the result by pressing
+              Ctrl+Insert and Shift+Insert through your desktop's remote-input permission. Your desktop asks once.
+              While it's on, GNOME may show a remote-control icon in the top bar.</small>
+              <small id="wayland-status"></small></div>
+            <div class="row" style="gap:6px;border:0;padding:0">
+              <button class="btn small" id="wayland-connect">Allow…</button>
+              <button class="btn small" id="wayland-reset">Reset</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <h2>Behaviour</h2>
@@ -99,7 +124,7 @@
           <input type="number" min="1" max="200" style="width:80px" data-setting="minSelectionLength">
         </div>
         <div class="row">
-          <div class="label">Keyboard shortcut<small>Acts on the selected text in any app.</small></div>
+          <div class="label">Keyboard shortcut<small>Acts on the selected text in any app.</small><small id="hotkey-note"></small><small id="hotkey-error" class="error-text"></small></div>
           <kbd id="hotkey-display">Ctrl+Alt+G</kbd>
         </div>
         <div class="row">

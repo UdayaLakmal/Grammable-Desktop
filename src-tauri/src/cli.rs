@@ -47,6 +47,8 @@ pub fn run(args: &[String]) -> i32 {
     match args.first().map(String::as_str) {
         Some("--list") => list(),
         Some("--status") => block_on(status()),
+        #[cfg(target_os = "linux")]
+        Some("--portal-test") => block_on(portal_test(args.get(1).map(String::as_str))),
         Some("--run") => run_preset_command(&args[1..]),
         Some("--version" | "-V") => {
             println!("grammable {}", env!("CARGO_PKG_VERSION"));
@@ -59,6 +61,55 @@ pub fn run(args: &[String]) -> i32 {
         _ => {
             eprintln!("{}", usage());
             USAGE
+        }
+    }
+}
+
+/// Hidden: checks the Wayland portal path (consent, Ctrl+C, clipboard) without the app.
+#[cfg(target_os = "linux")]
+async fn portal_test(mode: Option<&str>) -> i32 {
+    use crate::platform::wayland;
+    eprintln!("Starting the portal session. Allow keyboard access if your desktop asks…");
+    let started = std::time::Instant::now();
+    if let Err(e) = wayland::connect(None).await {
+        eprintln!("✗ {e}");
+        return 1;
+    }
+    eprintln!("✓ Session ready after {:.1}s. Saved consent: {}", started.elapsed().as_secs_f32(), wayland::has_saved_consent());
+    for line in wayland::self_test().await {
+        eprintln!("  {line}");
+    }
+    eprintln!("Now click into another app (e.g. Text Editor) and select some text.");
+    for n in (1..=8).rev() {
+        eprint!("{n}… ");
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    eprintln!();
+    let started = std::time::Instant::now();
+    let copied = wayland::copy_selection().await;
+    if mode == Some("--paste") {
+        if let Ok(Some(text)) = &copied {
+            let replaced = format!("{} [pasted by Grammable]", text.trim_end());
+            if let Err(e) = wayland::paste(&replaced).await {
+                eprintln!("✗ paste: {e}");
+            } else {
+                eprintln!("✓ pasted: {replaced}");
+            }
+        }
+    }
+    match copied {
+        Ok(Some(text)) => {
+            eprintln!("✓ Copied {} characters in {} ms:", text.chars().count(), started.elapsed().as_millis());
+            println!("{text}");
+            0
+        }
+        Ok(None) => {
+            eprintln!("✗ Nothing was copied (no selection, or Ctrl+C didn't reach the app).");
+            1
+        }
+        Err(e) => {
+            eprintln!("✗ {e}");
+            1
         }
     }
 }

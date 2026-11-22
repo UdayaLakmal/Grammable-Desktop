@@ -13,8 +13,8 @@ use tauri::{AppHandle, Emitter, Manager, RunEvent, WebviewUrl, WebviewWindowBuil
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_opener::OpenerExt;
 
-use crate::commands;
 use crate::settings::Settings;
+use crate::{button, commands, hotkey, monitor, popup};
 
 pub const RELEASES_URL: &str = "https://github.com/UdayaLakmal/Grammable-Desktop/releases";
 pub const KOFI_URL: &str = "https://ko-fi.com/udayalakmal";
@@ -30,6 +30,10 @@ const TRAY_ICON_PAUSED: &[u8] = include_bytes!("../icons/tray-paused.png");
 
 pub struct AppState {
     pub settings: Mutex<Settings>,
+    /// Why the global shortcut couldn't be registered, if it couldn't.
+    pub hotkey_error: Mutex<Option<String>>,
+    /// Extra information about the shortcut, e.g. that the desktop manages it (Wayland).
+    pub hotkey_note: Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -49,6 +53,16 @@ pub fn run(args: &[String]) {
     // Plain launch → Settings. Login item and `--popup` stay quiet, except until onboarding is done.
     let show_settings_now = !background && (!popup || !settings.has_completed_onboarding);
 
+    crate::platform::debug(
+        "app",
+        format!(
+            "Grammable {} on {} ({}), log: {}",
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::OS,
+            commands::session_type(),
+            crate::platform::debug_log_path().display()
+        ),
+    );
     let app = tauri::Builder::default()
         // Must be the first plugin: a second launch forwards its arguments here and exits.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
@@ -60,7 +74,10 @@ pub fn run(args: &[String]) {
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![ARG_BACKGROUND])))
         .plugin(tauri_plugin_opener::init())
-        .manage(AppState { settings: Mutex::new(settings) })
+        .plugin(hotkey::plugin())
+        .manage(AppState { settings: Mutex::new(settings), hotkey_error: Mutex::new(None), hotkey_note: Mutex::new(None) })
+        .manage(popup::Popup::default())
+        .manage(button::Button::default())
         .invoke_handler(tauri::generate_handler![
             commands::get_settings,
             commands::save_settings,
@@ -76,9 +93,36 @@ pub fn run(args: &[String]) {
             commands::create_preset,
             commands::open_url,
             commands::app_info,
+            commands::hotkey_status,
+            commands::wayland_status,
+            commands::wayland_connect,
+            commands::wayland_reset,
+            popup::popup_context,
+            popup::popup_resize,
+            popup::popup_run,
+            popup::popup_cancel,
+            popup::popup_dismiss,
+            popup::popup_replace,
+            popup::popup_copy,
+            popup::popup_open_settings,
+            button::button_clicked,
+            button::button_hover,
+            button::button_info,
         ])
         .setup(move |app| {
             build_tray(app.handle())?;
+            popup::create_window(app.handle())?;
+            // The G button and its input monitor: Windows and X11 only.
+            #[cfg(target_os = "linux")]
+            let wayland = crate::platform::wayland::is_wayland();
+            #[cfg(not(target_os = "linux"))]
+            let wayland = false;
+            if !wayland {
+                button::create_window(app.handle())?;
+                monitor::start(app.handle().clone());
+            }
+            let shortcut = app.state::<AppState>().settings().hotkey;
+            hotkey::register(app.handle(), &shortcut);
             if first_run {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move { first_run_setup(handle).await });
@@ -120,6 +164,10 @@ async fn first_run_setup(app: AppHandle) {
 
 /// Call after any settings change: refresh the tray and tell open windows.
 pub fn settings_changed(app: &AppHandle) {
+    let shortcut = app.state::<AppState>().settings().hotkey;
+    if hotkey::registered(app).as_deref() != Some(shortcut.as_str()) {
+        hotkey::register(app, &shortcut);
+    }
     if let Err(e) = refresh_tray(app) {
         eprintln!("Warning: could not update the tray menu: {e}");
     }
@@ -259,13 +307,9 @@ pub fn open_url(app: &AppHandle, url: &str) {
     }
 }
 
-/// Hotkey / tray / `--popup`: act on the current selection. Wired up in M2.
+/// Hotkey / tray / `--popup`: act on the current selection.
 pub fn trigger_from_hotkey(app: &AppHandle) {
-    if !app.state::<AppState>().settings().is_enabled {
-        return;
-    }
-    // TODO(M2): capture the selection and show the popup.
-    show_settings(app, None);
+    popup::trigger(app, None);
 }
 
 // MARK: Settings window

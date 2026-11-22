@@ -28,6 +28,14 @@
       "nsis": {
         "installMode": "currentUser"
       }
+    },
+    "linux": {
+      "deb": {
+        "desktopTemplate": "linux/tauri-entry.desktop",
+        "files": {
+          "/usr/share/applications/io.github.udayalakmal.grammable.desktop": "linux/io.github.udayalakmal.grammable.desktop"
+        }
+      }
     }
   }
 }

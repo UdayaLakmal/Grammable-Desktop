@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Grammable</title>
+  <style>
+    html, body { margin: 0; background: transparent; overflow: hidden; user-select: none; }
+    button {
+      position: absolute; left: 4px; top: 4px; width: 28px; height: 28px; padding: 0;
+      border: 0; border-radius: 50%; cursor: pointer;
+      background: linear-gradient(135deg, #5b5bd6, #a34fd6);
+      box-shadow: 0 1px 4px rgba(91, 91, 214, .55);
+      color: #fff; font: 800 15px/28px system-ui, "Segoe UI", Ubuntu, sans-serif;
+      transition: transform .15s;
+    }
+    button:hover { transform: scale(1.12); }
+    button::after { content: "✦"; position: absolute; right: 4px; top: 1px; font-size: 7px; line-height: 1; }
+  </style>
+</head>
+<body>
+  <button id="g" title="Grammable — fix, rewrite or change the tone">G</button>
+  <script>
+    "use strict";
+    const invoke = window.__TAURI__.core.invoke;
+    const g = document.getElementById("g");
+    invoke("button_info").then((i) => { g.title = `Grammable — fix, rewrite or change the tone (${i.hotkey})`; });
+    g.addEventListener("mouseenter", () => invoke("button_hover", { hovering: true }));
+    g.addEventListener("mouseleave", () => invoke("button_hover", { hovering: false }));
+    g.addEventListener("click", () => invoke("button_clicked"));
+  </script>
+</body>
+</html>

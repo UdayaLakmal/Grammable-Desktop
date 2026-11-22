@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Grammable
+GenericName=Writing Assistant
+Comment=Free AI writing assistant: fix grammar, change tone, rewrite text in any app
+Exec=grammable
+Icon=grammable
+Terminal=false
+Categories=Office;Utility;TextTools;
+Keywords=grammar;spelling;rewrite;AI;writing;
+StartupWMClass=grammable
+StartupNotify=true

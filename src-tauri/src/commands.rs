@@ -211,6 +211,23 @@ pub fn open_url(app: AppHandle, url: String) -> CmdResult<()> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct HotkeyStatus {
+    /// Why the shortcut couldn't be registered, if it couldn't.
+    error: Option<String>,
+    /// E.g. on Wayland: the shortcut the desktop actually uses, and where to change it.
+    note: Option<String>,
+}
+
+#[tauri::command]
+pub fn hotkey_status(state: State<AppState>) -> HotkeyStatus {
+    HotkeyStatus {
+        error: state.hotkey_error.lock().unwrap().clone(),
+        note: state.hotkey_note.lock().unwrap().clone(),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppInfo {
     version: &'static str,
     platform: &'static str,
@@ -245,4 +262,54 @@ pub fn session_type() -> String {
         _ if std::env::var_os("DISPLAY").is_some() => "x11".into(),
         _ => "unknown".into(),
     }
+}
+
+// MARK: Wayland
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WaylandStatus {
+    /// The user has allowed keyboard access before (a restore token is saved).
+    allowed: bool,
+    /// A portal session is running.
+    connected: bool,
+}
+
+#[tauri::command]
+pub async fn wayland_status() -> WaylandStatus {
+    #[cfg(target_os = "linux")]
+    {
+        use crate::platform::wayland;
+        WaylandStatus { allowed: wayland::has_saved_consent(), connected: wayland::is_connected().await }
+    }
+    #[cfg(not(target_os = "linux"))]
+    WaylandStatus { allowed: false, connected: false }
+}
+
+/// Starts the portal session, which shows the desktop's consent dialog if
+/// needed, attached to the window that asked (Settings).
+#[tauri::command]
+pub async fn wayland_connect(window: tauri::WebviewWindow) -> CmdResult<()> {
+    #[cfg(target_os = "linux")]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        let x11_parent = match window.window_handle().map(|h| h.as_raw()) {
+            Ok(RawWindowHandle::Xlib(h)) => Some(h.window as u64),
+            Ok(RawWindowHandle::Xcb(h)) => Some(u64::from(h.window.get())),
+            _ => None,
+        };
+        return crate::platform::wayland::connect(x11_parent).await;
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = window;
+        Ok(())
+    }
+}
+
+/// Ends the session and forgets the consent; the desktop asks again next time.
+#[tauri::command]
+pub async fn wayland_reset() {
+    #[cfg(target_os = "linux")]
+    crate::platform::wayland::disconnect().await;
 }
